@@ -1,1 +1,3 @@
 # Qubit
+
+The purpose of this PoC is to validate the feasibility of the core technological workflow. This prototype maintains minimal functionality and does not support processing multiple complex application scenarios, while also not requiring a complete user interface or posture scoring mechanism. Its primary objective is to demonstrate that the fundamental components of the system can be effectively integrated, while providing posture analysis and feedback evaluation within a real-time operational environment.
