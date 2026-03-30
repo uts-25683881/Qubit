@@ -2,6 +2,7 @@ import csv
 import cv2
 import mediapipe as mp
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -102,6 +103,15 @@ def run_extraction():
             print(f"  {extracted} extracted  |   {failed} failed")
             total_extracted += extracted
             total_failed    += failed
+
+    all_csvs = [OUT_DIR / f"{split}.csv" for split in SPLITS]
+    existing = [p for p in all_csvs if p.exists()]
+    
+    if existing:
+        combined = pd.concat([pd.read_csv(p) for p in existing], ignore_index=True)
+        combined_path = OUT_DIR / "all.csv"
+        combined.to_csv(combined_path, index=False)
+        print(f"    all.csv    →  {len(combined)} rows (combined)")
  
     print(f"\n── Summary ─────────────────────────────────────────────")
     print(f"  Total extracted : {total_extracted}")
