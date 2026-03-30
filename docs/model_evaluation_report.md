@@ -89,12 +89,3 @@ The raw landmark-based approach provides a **simpler and more robust pipeline**,
 The system is **ready for integration into live webcam-based posture monitoring**.
 
 ---
-
-## Future Improvements
-
-* Add temporal smoothing to reduce prediction flickering
-* Expand dataset with varied camera angles and lighting conditions
-* Explore deep learning approaches (e.g., LSTM for posture sequences)
-* Add user feedback overlay (e.g., “Straighten your back”) for better UX
-
----
