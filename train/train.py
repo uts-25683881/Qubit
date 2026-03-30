@@ -13,7 +13,7 @@ from src.utils import save_artifacts
 
 
 def main():
-    data_path = "data/all.csv"
+    data_path = "data/landmarks_features/all.csv"
 
     model_dir = "models"
     docs_dir = "docs"
