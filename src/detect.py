@@ -124,15 +124,13 @@ def extract_features(landmarks: np.ndarray) -> np.ndarray:
     hip_width = _distance(l_hip, r_hip)
     shoulder_hip_ratio = hip_width / (shoulder_width + 1e-6)
 
-    body_height = abs(nose[1] - mid_knee[1]) + 1e-6
+    shoulder_y = float(mid_shoulder[1])
+    hip_y = float(mid_hip[1])
+    knee_y = float(mid_knee[1])
 
-    shoulder_y = (mid_shoulder[1] - nose[1]) / body_height
-    hip_y = (mid_hip[1] - nose[1]) / body_height
-    knee_y = (mid_knee[1] - nose[1]) / body_height
-
-    shoulder_hip_dy = (mid_hip[1] - mid_shoulder[1]) / body_height
-    hip_knee_dy = (mid_knee[1] - mid_hip[1]) / body_height
-    nose_shoulder_dy = (mid_shoulder[1] - nose[1]) / body_height
+    shoulder_hip_dy = hip_y - shoulder_y
+    hip_knee_dy = knee_y - hip_y
+    nose_shoulder_dy = mid_shoulder[1] - nose[1]
 
     trunk_lean = float(mid_hip[0] - mid_shoulder[0])
 
@@ -198,6 +196,10 @@ def get_prediction(frame) -> tuple[str, float, object] | None:
     scaled_features = SCALER.transform(features_df)
 
     pred_idx = int(MODEL.predict(scaled_features)[0])
+    print("classes:", LABEL_ENCODER.classes_ if LABEL_ENCODER is not None else "no encoder")
+
+    if hasattr(MODEL, "predict_proba"):
+        print("probs:", MODEL.predict_proba(scaled_features)[0])
     label = decode_label(pred_idx)
     confidence = get_confidence(scaled_features, pred_idx)
 
