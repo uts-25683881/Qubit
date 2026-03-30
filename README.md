@@ -9,12 +9,20 @@ The purpose of this PoC is to validate the feasibility of the core technological
 ### 1. Install dependencies:
 pip install -r requirements.txt
 
-### 2. Download MediaPipe model
-Run this once from the project root:
+### 2. Download MediaPipe pose model (optional)
 
-wget -q https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task
+For **`src/extract.py`** only (images → `data/landmarks/*.csv`). Skip if you already have a landmarks CSV.
 
-Or on Windows (PowerShell):
-Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task" -OutFile "pose_landmarker_heavy.task"
+Save as **`models/pose_landmarker_heavy.task`** (create `models/` if missing).
 
-**Place the downloaded file 'pose_landmarker_heavy.task' in models/ folder.**
+Linux / macOS:
+
+```bash
+wget -q -O models/pose_landmarker_heavy.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task
+```
+
+Windows (PowerShell):
+
+```powershell
+Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task" -OutFile "models\pose_landmarker_heavy.task"
+```
