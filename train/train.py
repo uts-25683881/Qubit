@@ -14,23 +14,38 @@ from sklearn.metrics import (
     accuracy_score
 )
 
+LANDMARK_START = 0
+NUM_LANDMARKS = 33
+
 
 def load_dataset(file_path):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Dataset not found: {file_path}")
-
     df = pd.read_csv(file_path)
-    print(f"Loaded dataset from {file_path}")
-    print(f"Dataset shape: {df.shape}")
+    print(f"Loaded dataset: {file_path}")
+    print(f"Shape: {df.shape}")
     return df
+
+
+def get_landmark_columns():
+    cols = []
+    for i in range(LANDMARK_START, NUM_LANDMARKS):
+        cols.extend([f"x{i}", f"y{i}", f"z{i}", f"v{i}"])
+    return cols
 
 
 def prepare_features_and_labels(df):
     if "class" not in df.columns:
-        raise ValueError("Expected target column 'class' not found.")
+        raise ValueError("Expected 'class' column in dataset.")
 
-    X = df.drop(columns=["filename", "class"], errors="ignore")
-    y = df["class"]
+    landmark_cols = get_landmark_columns()
+
+    missing = [c for c in landmark_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing landmark columns: {missing[:10]}")
+
+    X = df[landmark_cols].copy()
+    y = df["class"].copy()
     return X, y
 
 
@@ -53,10 +68,8 @@ def split_data(X, y, test_size=0.30, random_state=42):
         stratify=y,
         random_state=random_state
     )
-
     print(f"\nTrain shape: {X_train.shape}")
     print(f"Test shape: {X_test.shape}")
-
     return X_train, X_test, y_train, y_test
 
 
@@ -103,27 +116,17 @@ def train_and_select_best_model(models, X_train, y_train, X_test, y_test):
 
 def print_classification_results(y_true, y_pred, label_encoder):
     print("\nClassification Report:")
-    print(
-        classification_report(
-            y_true,
-            y_pred,
-            target_names=label_encoder.classes_
-        )
-    )
+    print(classification_report(y_true, y_pred, target_names=label_encoder.classes_))
 
 
 def save_confusion_matrix(y_true, y_pred, label_encoder, output_path):
     cm = confusion_matrix(y_true, y_pred)
-    disp = ConfusionMatrixDisplay(
-        confusion_matrix=cm,
-        display_labels=label_encoder.classes_
-    )
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=label_encoder.classes_)
     disp.plot(cmap="Blues")
     plt.title("Confusion Matrix")
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
-
     print(f"Confusion matrix saved to: {output_path}")
 
 
@@ -131,14 +134,13 @@ def save_artifacts(model, scaler, label_encoder, model_path, scaler_path, encode
     joblib.dump(model, model_path)
     joblib.dump(scaler, scaler_path)
     joblib.dump(label_encoder, encoder_path)
-
     print(f"Model saved to: {model_path}")
     print(f"Scaler saved to: {scaler_path}")
     print(f"Label encoder saved to: {encoder_path}")
 
 
 def main():
-    data_path = "Qubit-main/data/landmarks_features/all.csv"
+    data_path = "Qubit-main/data/landmarks/all.csv"
 
     model_dir = "models"
     docs_dir = "docs"
@@ -160,11 +162,7 @@ def main():
 
     models = get_candidate_models()
     best_model_name, best_model, best_predictions, best_accuracy = train_and_select_best_model(
-        models,
-        X_train_scaled,
-        y_train,
-        X_test_scaled,
-        y_test
+        models, X_train_scaled, y_train, X_test_scaled, y_test
     )
 
     print_classification_results(y_test, best_predictions, label_encoder)
