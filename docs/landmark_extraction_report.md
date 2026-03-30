@@ -13,5 +13,9 @@
   Total failed    : 347
   Output folder   : /Users/tasnuba/JupyterLab/aistudio/Qubit/data/landmarks
 
+  Files written:
+    train.csv  →  702 rows
+    test.csv  →  417 rows
+    valid.csv  →  493 rows
 
 MediaPipe successfully extract landmarks from at ~82% of total raw dataset images.
