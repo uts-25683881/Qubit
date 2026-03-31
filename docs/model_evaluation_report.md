@@ -13,7 +13,7 @@ The model was evaluated using a **70/30 stratified train-test split** to ensure 
 **Model:** Random Forest Classifier
 
 **Justification:**
-The Random Forest model achieved the highest accuracy (**94.63%**) compared to the SVM baseline (**92.36%**), demonstrating better performance in capturing patterns in raw landmark data.
+The Random Forest model achieved the highest accuracy (**93.71%**) compared to the SVM baseline (**90.23%**), demonstrating better performance in capturing patterns in raw landmark data.
 
 ---
 
@@ -23,7 +23,7 @@ The Random Forest model achieved the highest accuracy (**94.63%**) compared to t
 
 | Metric   | Value               |
 | -------- | ------------------- |
-| Accuracy | **0.9463 (94.63%)** |
+| Accuracy | **0.9371 (93.71%)** |
 
 ---
 
@@ -31,8 +31,8 @@ The Random Forest model achieved the highest accuracy (**94.63%**) compared to t
 
 | Class     | Precision | Recall | F1-Score | Support |
 | --------- | --------- | ------ | -------- | ------- |
-| Correct   | 0.93      | 0.95   | 0.94     | 214     |
-| Incorrect | 0.96      | 0.94   | 0.95     | 270     |
+| Correct   | 0.94      | 0.96   | 0.95     | 1161     |
+| Incorrect | 0.94      | 0.90   | 0.92     | 763     |
 
 ---
 
@@ -40,20 +40,20 @@ The Random Forest model achieved the highest accuracy (**94.63%**) compared to t
 
 |                  | Predicted Correct | Predicted Incorrect |
 | ---------------- | ----------------- | ------------------- |
-| Actual Correct   | 204               | 10                  |
-| Actual Incorrect | 16                | 254                 |
+| Actual Correct   | 1117              | 44                  |
+| Actual Incorrect | 77                | 686                 |
 
 ---
 
 ## Performance Interpretation
 
 * The model demonstrates **strong and balanced performance** across both classes.
-* High recall for **correct posture (0.95)** indicates reliable detection of good posture.
-* High precision for **incorrect posture (0.96)** shows strong confidence when identifying poor posture.
+* High recall for **correct posture (0.96)** indicates reliable detection of good posture.
+* High precision for **incorrect posture (0.94)** shows strong confidence when identifying poor posture.
 * Very low misclassification:
 
-  * Only **10 correct postures misclassified**
-  * Only **16 incorrect postures misclassified**
+  * Only **44 correct postures misclassified**
+  * Only **77 incorrect postures misclassified**
 * Raw landmark input allows the model to directly learn spatial body patterns without dependency on handcrafted features.
 
 ---
@@ -61,7 +61,7 @@ The Random Forest model achieved the highest accuracy (**94.63%**) compared to t
 ## Threshold Evaluation
 
 **Minimum required accuracy:** ≥ 80%
-**Achieved accuracy:** 94.63%
+**Achieved accuracy:** 93.71%
 
 ✅ **Verdict: PASS**
 

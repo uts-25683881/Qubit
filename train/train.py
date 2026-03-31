@@ -160,7 +160,7 @@ def save_artifacts(model, scaler, label_encoder, model_path, scaler_path, encode
 
 
 def main(*, use_binary: bool):
-    data_path = "data/landmarks/all.csv"
+    data_path = "data/landmarks/all_merged.csv"
 
     model_dir = "models"
     docs_dir = "docs"
