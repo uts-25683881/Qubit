@@ -35,17 +35,29 @@ POSE = mp_pose.Pose(
     min_tracking_confidence=0.5,
 )
 
-
 def get_feature_names():
     names = []
     for i in range(LANDMARK_START, NUM_LANDMARKS):
         names.extend([f"x{i}", f"y{i}", f"z{i}", f"v{i}"])
     return names
 
-
 FEATURE_NAMES = get_feature_names()
 
-
+def pose_bbox_xyxy(frame_shape, pose_landmarks, pad_ratio=0.05):
+    """Axis-aligned box from all pose landmarks (normalized x,y → pixels)."""
+    h, w = frame_shape[:2]
+    xs = [lm.x * w for lm in pose_landmarks.landmark]
+    ys = [lm.y * h for lm in pose_landmarks.landmark]
+    x1, x2 = min(xs), max(xs)
+    y1, y2 = min(ys), max(ys)
+    pw = (x2 - x1) * pad_ratio
+    ph = (y2 - y1) * pad_ratio
+    x1 = max(0, int(x1 - pw))
+    y1 = max(0, int(y1 - ph))
+    x2 = min(w - 1, int(x2 + pw))
+    y2 = min(h - 1, int(y2 + ph))
+    return x1, y1, x2, y2
+    
 def extract_landmarks(results):
     if results.pose_landmarks is None:
         return None
@@ -135,6 +147,9 @@ def run_detection():
                     results.pose_landmarks,
                     mp_pose.POSE_CONNECTIONS
                 )
+                bx1, by1, bx2, by2 = pose_bbox_xyxy(frame.shape, results.pose_landmarks)
+                bbox_color = (0, 255, 0) if label == "correct" else (0, 0, 255)
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), bbox_color, 2, cv2.LINE_AA)
 
             color = (0, 255, 0) if label == "correct" else (0, 0, 255)
             cv2.putText(
@@ -152,7 +167,8 @@ def run_detection():
 
         cv2.imshow("Real-Time Posture Detection", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if key in (ord("q"), ord("Q")):
             break
 
     print("\nExiting...")

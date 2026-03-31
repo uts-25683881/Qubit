@@ -6,6 +6,7 @@ from pathlib import Path
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import argparse
+from typing import Iterable, Iterator
  
 # Paths
 BASE_DIR   = Path(__file__).resolve().parents[1]
@@ -29,9 +30,13 @@ NUM_LANDMARKS = 33
 USE_ROBOFLOW = True 
 
 # CSV header: filename, class, then x0,y0,z0,v0 ... x32,y32,z32,v32 ───────
-HEADER = ["filename", "class"]
-for i in range(NUM_LANDMARKS):
-    HEADER += [f"x{i}", f"y{i}", f"z{i}", f"v{i}"]
+def build_header(num_landmarks: int) -> list[str]:
+    header = ["filename", "class"]
+    for i in range(num_landmarks):
+        header += [f"x{i}", f"y{i}", f"z{i}", f"v{i}"]
+    return header
+
+HEADER = build_header(NUM_LANDMARKS)
  
 def load_roboflow_split_df(split: str) -> pd.DataFrame:
     """Read Roboflow _classes.csv; column 'class' is the fine label (one of ROBOFLOW_LABEL_COLS)."""
@@ -51,26 +56,34 @@ def landmarks_vector_from_result(result) -> list | None:
         row += [lm.x, lm.y, lm.z, lm.visibility]
     return row
 
-def process_roboflow_split(split: str, detector) -> tuple:
-    """
-    Roboflow multiclass folder: _classes.csv + flat images in split/.
-    Writes OUT_DIR / {split}.csv, same HEADER as process_split.
-    """
-    split_dir = ROBOFLOW_ROOT / split
-    if not split_dir.is_dir():
-        print(f"  [SKIP] {split_dir} not found")
-        return 0, 0
+def is_image_file(path: Path) -> bool:
+    return path.suffix.lower() in {".jpg", ".jpeg", ".png"}
 
-    df = load_roboflow_split_df(split)
-    out_path = OUT_DIR / f"{split}.csv"
+def vector_from_frame(detector, frame_bgr) -> list | None:
+    """Run pose detection on BGR frame, return flattened landmark vector."""
+    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result = detector.detect(mp_image)
+    return landmarks_vector_from_result(result)
+
+def extract_items_to_csv(
+    *,
+    items: Iterable[tuple[str, str, Path]],
+    detector,
+    out_path: Path
+) -> tuple[int, int]:
+    """
+    Extract pose landmarks for labeled items and write to CSV.
+    items yields: (filename, class_name, img_path)
+    Returns: (extracted, failed)
+    """
     extracted, failed = 0, 0
 
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(HEADER)
 
-        for filename, cls_name in zip(df["filename"], df["class"]):
-            img_path = split_dir / filename
+        for filename, cls_name, img_path in items:
             if not img_path.is_file():
                 print(f"  [WARN] Missing file: {img_path.name}")
                 failed += 1
@@ -82,11 +95,7 @@ def process_roboflow_split(split: str, detector) -> tuple:
                 failed += 1
                 continue
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            result = detector.detect(mp_image)
-
-            vec = landmarks_vector_from_result(result)
+            vec = vector_from_frame(detector, frame)
             if vec is None:
                 print(f"  [WARN] No pose detected: {img_path.name}")
                 failed += 1
@@ -97,53 +106,56 @@ def process_roboflow_split(split: str, detector) -> tuple:
 
     return extracted, failed
 
+def iter_roboflow_items(split: str) -> Iterator[tuple[str, str, Path]]:
+    """Yield (filename, class_name, img_path) from Roboflow split folder."""
+    split_dir = ROBOFLOW_ROOT / split
+    df = load_roboflow_split_df(split)
+
+    for filename, cls_name in zip(df["filename"], df["class"]):
+        yield filename, cls_name, split_dir / filename
+
+def process_roboflow_split(split: str, detector) -> tuple:
+    """
+    Roboflow multiclass folder: _classes.csv + flat images in split/.
+    Writes OUT_DIR / {split}.csv.
+    """
+    split_dir = ROBOFLOW_ROOT / split
+    if not split_dir.is_dir():
+        print(f"  [SKIP] {split_dir} not found")
+        return 0, 0
+
+    out_path = OUT_DIR / f"{split}.csv"
+    return extract_items_to_csv(
+        items=iter_roboflow_items(split),
+        detector=detector,
+        out_path=out_path,
+    )
+
+def iter_raw_items(split: str) -> Iterator[tuple[str, str, Path]]:
+    """Yield (filename, class_name, img_path) from data/raw/{split}/..."""
+    for cls_name in CLASSES:
+        src_dir = DATA_DIR / split / cls_name
+        if not src_dir.exists():
+            print(f"  [SKIP] {src_dir} not found")
+            continue
+
+        for img_path in sorted(src_dir.iterdir()):
+            if not is_image_file(img_path):
+                continue
+            yield img_path.name, cls_name, img_path
+
 def process_split(split: str, detector) -> tuple:
     """
-    Runs pose detection on all images in one split.
+    Runs pose detection on all images in one split (raw folder).
     Writes results to data/landmarks/{split}.csv.
     Returns (extracted, failed) counts.
     """
     out_path = OUT_DIR / f"{split}.csv"
-    extracted, failed = 0, 0
- 
-    with open(out_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(HEADER)
- 
-        for cls_name in CLASSES:
-            src_dir = DATA_DIR / split / cls_name
-            if not src_dir.exists():
-                print(f"  [SKIP] {src_dir} not found")
-                continue
- 
-            for img_path in sorted(src_dir.iterdir()):
-                if img_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
-                    continue
- 
-                frame = cv2.imread(str(img_path))
-                if frame is None:
-                    print(f"  [WARN] Could not read: {img_path.name}")
-                    failed += 1
-                    continue
- 
-                rgb      = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                result   = detector.detect(mp_image)
- 
-                if not result.pose_landmarks:
-                    print(f"  [WARN] No pose detected: {img_path.name}")
-                    failed += 1
-                    continue
- 
-                # Flatten all 33 landmarks → x, y, z, visibility
-                row = [img_path.name, cls_name]
-                for lm in result.pose_landmarks[0]:   # [0] = first person
-                    row += [lm.x, lm.y, lm.z, lm.visibility]
- 
-                writer.writerow(row)
-                extracted += 1
- 
-    return extracted, failed
+    return extract_items_to_csv(
+        items=iter_raw_items(split),
+        detector=detector,
+        out_path=out_path,
+    )
  
 def run_extraction(*, use_roboflow: bool | None = None):
     rf = USE_ROBOFLOW if use_roboflow is None else use_roboflow

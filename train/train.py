@@ -29,10 +29,11 @@ def collapse_roboflow_fine_to_binary(df: pd.DataFrame) -> pd.DataFrame:
     mask = s.isin(ROBOFLOW_FINE_LABELS)
     if not mask.any():
         return out
-    upright = s == "upright"
-    out.loc[mask & upright, "class"] = "correct"
-    out.loc[mask & ~upright, "class"] = "incorrect"
-    print("Roboflow 5-class -> binary (fine-labeled rows only)")
+
+    correct_mask = s.isin(["upright", "leaning_backward", "leaning_forward"])
+    out.loc[mask & correct_mask, "class"] = "correct"
+    out.loc[mask & ~correct_mask, "class"] = "incorrect"
+    print("Roboflow 5-class -> binary (fine-labeled rows only, leaning_backward/leaning_forward considered correct)")
     print(out.loc[mask, "class"].value_counts())
     return out
 
