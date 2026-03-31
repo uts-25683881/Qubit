@@ -89,6 +89,36 @@ def get_prediction(frame):
 
     return label, confidence, results
 
+def get_bounding_box(results, frame_shape, padding=20):
+    if results.pose_landmarks is None:
+        return None
+
+    h, w = frame_shape[:2]
+
+    xs = [lm.x for lm in results.pose_landmarks.landmark]
+    ys = [lm.y for lm in results.pose_landmarks.landmark]
+
+    x_min = max(0, int(min(xs) * w) - padding)
+    y_min = max(0, int(min(ys) * h) - padding)
+    x_max = min(w, int(max(xs) * w) + padding)
+    y_max = min(h, int(max(ys) * h) + padding)
+
+    return x_min, y_min, x_max, y_max
+
+
+def draw_bounding_box(frame, bbox, label):
+    """
+    Green = correct, Red = incorrect
+    """
+    if bbox is None:
+        return
+
+    x_min, y_min, x_max, y_max = bbox
+
+    color = (0, 255, 0) if label == "correct" else (0, 0, 255)
+
+    cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), color, 2)
+
 
 def run_detection():
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -135,6 +165,8 @@ def run_detection():
                     results.pose_landmarks,
                     mp_pose.POSE_CONNECTIONS
                 )
+            bbox = get_bounding_box(results, frame.shape)
+            draw_bounding_box(frame, bbox, label)
 
             color = (0, 255, 0) if label == "correct" else (0, 0, 255)
             cv2.putText(
