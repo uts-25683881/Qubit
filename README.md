@@ -1,28 +1,201 @@
 # Qubit
 
-The purpose of this PoC is to validate the feasibility of the core technological workflow. This prototype maintains minimal functionality and does not support processing multiple complex application scenarios, while also not requiring a complete user interface or posture scoring mechanism. Its primary objective is to demonstrate that the fundamental components of the system can be effectively integrated, while providing posture analysis and feedback evaluation within a real-time operational environment.
+Qubit is a posture and exercise recognition PoC built around MediaPipe skeleton landmarks.
 
+The project currently contains two tracks:
 
+- Legacy single-frame posture pipeline (RandomForest/SVM).
+- New sequence-based ST-GCN exercise recognition pipeline (recommended).
 
-## Setup
+---
 
-### 1. Install dependencies:
-pip install -r requirements.txt
+## Current Recommended Pipeline (ST-GCN)
 
-### 2. Download MediaPipe pose model (optional)
+### Objective
 
-For **`src/extract.py`** only (images → `data/landmarks/*.csv`). Skip if you already have a landmarks CSV.
+Recognize 5 exercise classes from skeleton sequences:
 
-Save as **`models/pose_landmarker_heavy.task`** (create `models/` if missing).
+- `jumping_jack`
+- `pull_up`
+- `push_up`
+- `situp`
+- `squat`
 
-Linux / macOS:
+### Data Source
+
+- `dataset/Physical Exercise Recognition Time Series Dataset/landmarks.csv`
+- `dataset/Physical Exercise Recognition Time Series Dataset/labels.csv`
+
+### Core Steps
+
+1. Build sliding-window sequence dataset (`[N, C, T, V, M]`).
+2. Train ST-GCN model.
+3. Run real-time webcam demo.
+4. (Optional) Serve predictions via FastAPI for UI integration.
+
+---
+
+## Environment Setup
+
+### 1) Install dependencies
 
 ```bash
-wget -q -O models/pose_landmarker_heavy.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task
+pip install -r requirements.txt
 ```
 
-Windows (PowerShell):
+`requirements.txt` includes:
 
-```powershell
-Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task" -OutFile "models\pose_landmarker_heavy.task"
+- `mediapipe`
+- `opencv-python`
+- `numpy`
+- `pandas`
+- `torch`
+- `fastapi`
+- `uvicorn`
+
+### 2) GPU setup (recommended for training speed)
+
+If you use NVIDIA GPU, install CUDA-enabled PyTorch in your conda env:
+
+```bash
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 ```
+
+Verify:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no gpu')"
+```
+
+---
+
+## Build ST-GCN Dataset
+
+Generate training windows from time-series landmarks:
+
+```bash
+python train/engineer_stgcn_windows.py
+```
+
+Expected output:
+
+- `data/stgcn/stgcn_windows.npz`
+- Console stats including:
+  - `X shape`
+  - `y shape`
+  - `classes`
+  - `feature_stats`
+  - `skipped_windows`
+
+---
+
+## Train ST-GCN
+
+### Standard training
+
+```bash
+python train/train_stgcn.py --epochs 30 --batch-size 128 --lr 1e-3 --num-workers 4
+```
+
+### Fast iteration mode
+
+```bash
+python train/train_stgcn.py --fast --epochs 30 --batch-size 128 --lr 1e-3 --num-workers 4
+```
+
+Key behaviors:
+
+- Video-level split (prevents leakage across windows from same video).
+- Early stopping (`--patience`).
+- Optional video subsampling (`--max-videos`).
+- Mixed precision on CUDA.
+
+Artifacts:
+
+- `models/stgcn_best.pth`
+- `models/stgcn_label_info.pkl`
+- `docs/confusion_matrix_stgcn.png`
+
+---
+
+## Real-Time Demo
+
+Run webcam inference:
+
+```bash
+python src/detect_stgcn.py --unknown-threshold 0.55
+```
+
+Notes:
+
+- Uses `pose_world_landmarks` first, then falls back to `pose_landmarks`.
+- Uses unknown gating to reduce forced misclassification.
+- Displays top-3 probabilities on screen.
+
+---
+
+## API for UI Integration
+
+Start server:
+
+```bash
+uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Endpoints:
+
+- `GET /health`
+- `POST /predict` with `window` shape `[T, 33, 3]`
+
+Response includes:
+
+- `label` (may be `unknown(...)`)
+- `confidence`
+- `probs`
+- `classes`
+
+---
+
+## Legacy Pipeline (Single-Frame)
+
+These files are kept for baseline/reference:
+
+- `src/extract.py`
+- `train/train.py`
+- `src/detect.py`
+
+This pipeline is not the primary path for sequence-based exercise recognition.
+
+---
+
+## Troubleshooting
+
+### 1) Model predicts one class too often
+
+- Rebuild NPZ and retrain.
+- Confirm `feature_stats` are reasonable after dataset build.
+- Use real webcam input (avoid testing by filming a screen).
+- Tune `--unknown-threshold`.
+
+### 2) Training is too slow
+
+- Ensure CUDA-enabled PyTorch is installed.
+- Use `--fast`.
+- Increase `--batch-size` if GPU memory allows.
+- Reduce sample count with `--max-videos`.
+
+### 3) `ModuleNotFoundError: No module named 'torch'`
+
+- Torch is not installed in the active environment.
+- Install torch in the same environment used to run scripts.
+
+---
+
+## Project Structure (Important Files)
+
+- `train/engineer_stgcn_windows.py` - sequence feature engineering and dataset builder
+- `train/stgcn_model.py` - ST-GCN model
+- `train/train_stgcn.py` - ST-GCN training entry
+- `src/skeleton_utils.py` - shared normalization utilities
+- `src/detect_stgcn.py` - real-time webcam demo
+- `api/app.py` - FastAPI service for UI/backend integration

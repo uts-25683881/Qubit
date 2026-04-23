@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qubit Product UI</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --panel-2: #0f1726;
+      --text: #e6edf7;
+      --muted: #9fb0cc;
+      --line: #25314b;
+      --brand: #5b8cff;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: radial-gradient(circle at 20% 0%, #111b33 0%, var(--bg) 45%);
+      color: var(--text);
+    }
+    .layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .title { margin: 0; font-size: 1.2rem; }
+    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.95rem; }
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .video-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #090f1d;
+    }
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      align-items: center;
+    }
+    button, select {
+      border: 1px solid var(--line);
+      background: #1a2640;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    select { cursor: pointer; }
+    button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat { background: #111b30; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+    .stat .k { font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; }
+    .stat .v { font-size: 1.05rem; font-weight: 600; }
+    .label-good { color: var(--ok); }
+    .label-mid { color: var(--warn); }
+    .label-bad { color: var(--err); }
+    .top-list { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+    .small { color: var(--muted); font-size: 0.86rem; margin-top: 8px; line-height: 1.45; }
+    .mono {
+      font-family: Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0d1527;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      min-height: 82px;
+      margin-top: 10px;
+      color: #c8dbff;
+    }
+    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <section class="card header">
+      <div>
+        <h1 class="title">Qubit Product UI</h1>
+        <p class="subtitle">Sitting posture + exercise action in one interface</p>
+      </div>
+      <span id="apiState" class="badge">API: checking...</span>
+    </section>
+
+    <section class="card">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="toolbar">
+        <button id="startBtn" class="primary">Start Camera</button>
+        <button id="stopBtn" disabled>Stop Camera</button>
+        <button id="healthBtn">Check Backend</button>
+        <select id="modeSelect" title="Inference mode">
+          <option value="auto">Auto</option>
+          <option value="posture">Posture</option>
+          <option value="action">Action</option>
+        </select>
+      </div>
+      <p class="small">
+        Auto mode picks posture model when motion is low, otherwise uses action model.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="stat-grid">
+        <div class="stat"><div class="k">Mode</div><div id="activeMode" class="v">auto</div></div>
+        <div class="stat"><div class="k">Current Label</div><div id="label" class="v">waiting...</div></div>
+        <div class="stat"><div class="k">Confidence</div><div id="confidence" class="v">0.00</div></div>
+        <div class="stat"><div class="k">FPS</div><div id="fps" class="v">0.0</div></div>
+        <div class="stat"><div class="k">Action Window Fill</div><div id="windowFill" class="v">0 / 24</div></div>
+        <div class="stat"><div class="k">Motion Score</div><div id="motionScore" class="v">0.000</div></div>
+      </div>
+      <h3>Top-3 Classes</h3>
+      <ol id="top3" class="top-list"><li>-</li><li>-</li><li>-</li></ol>
+      <div id="log" class="mono">Ready.</div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+  <script>
+    const WINDOW_SIZE = 24;
+    const PREDICT_EVERY_MS = 260;
+    const EMA_ALPHA = 0.6;
+    const AUTO_MOTION_THRESHOLD = 0.012;
+
+    const videoEl = document.getElementById("video");
+    const canvasEl = document.getElementById("overlay");
+    const ctx = canvasEl.getContext("2d");
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const healthBtn = document.getElementById("healthBtn");
+    const modeSelect = document.getElementById("modeSelect");
+
+    const apiState = document.getElementById("apiState");
+    const activeModeEl = document.getElementById("activeMode");
+    const labelEl = document.getElementById("label");
+    const confidenceEl = document.getElementById("confidence");
+    const fpsEl = document.getElementById("fps");
+    const windowFillEl = document.getElementById("windowFill");
+    const motionScoreEl = document.getElementById("motionScore");
+    const top3El = document.getElementById("top3");
+    const logEl = document.getElementById("log");
+
+    let camera = null;
+    let pose = null;
+    let isRunning = false;
+    let frameWindow = [];
+    let smoothProbs = null;
+    let classes = [];
+    let postureModelReady = false;
+    let lastPredictAt = 0;
+    let lastFpsAt = performance.now();
+    let fpsCounter = 0;
+    let prevActionFrame = null;
+    let motionScore = 0;
+
+    function setLog(text) { logEl.textContent = text; }
+    function setApiBadge(ok, text) {
+      apiState.textContent = `API: ${text}`;
+      apiState.style.color = ok ? "#86efac" : "#fda4af";
+      apiState.style.borderColor = ok ? "#14532d" : "#7f1d1d";
+    }
+
+    function setLabelStyle(conf) {
+      labelEl.classList.remove("label-good", "label-mid", "label-bad");
+      if (conf >= 0.75) labelEl.classList.add("label-good");
+      else if (conf >= 0.5) labelEl.classList.add("label-mid");
+      else labelEl.classList.add("label-bad");
+    }
+
+    function updateTop3(probs, classNames) {
+      if (!probs || !classNames || classNames.length === 0) return;
+      const idx = probs.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).slice(0, 3);
+      top3El.innerHTML = idx.map(([v, i]) => `<li>${classNames[i]}: ${v.toFixed(3)}</li>`).join("");
+    }
+
+    function toActionFrame(result) {
+      const source = result.poseWorldLandmarks || result.poseLandmarks;
+      if (!source || source.length !== 33) return null;
+      return source.map((p) => [p.x, p.y, p.z]);
+    }
+
+    function toPostureFrame(result) {
+      const source = result.poseLandmarks;
+      if (!source || source.length !== 33) return null;
+      return source.map((p) => [p.x, p.y, p.z, p.visibility ?? 0.0]);
+    }
+
+    function computeMotion(currFrame) {
+      if (!prevActionFrame || !currFrame) return 0;
+      let sum = 0;
+      for (let i = 0; i < currFrame.length; i += 1) {
+        const dx = currFrame[i][0] - prevActionFrame[i][0];
+        const dy = currFrame[i][1] - prevActionFrame[i][1];
+        const dz = currFrame[i][2] - prevActionFrame[i][2];
+        sum += Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+      return sum / currFrame.length;
+    }
+
+    async function callApi(path, body) {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(data));
+      return data;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch("/health");
+        const data = await res.json();
+        postureModelReady = Boolean(data.posture_model_ready);
+        setApiBadge(true, `${data.status} (${data.device})`);
+        setLog(JSON.stringify(data, null, 2));
+        return true;
+      } catch (e) {
+        setApiBadge(false, "offline");
+        setLog(`Health check failed: ${e.message}`);
+        return false;
+      }
+    }
+
+    async function runActionPrediction() {
+      if (frameWindow.length < WINDOW_SIZE) return;
+      const data = await callApi("/predict", { window: frameWindow });
+      classes = data.classes || classes;
+      const probs = data.probs || [];
+      if (probs.length > 0) {
+        if (!smoothProbs) smoothProbs = probs.slice();
+        else smoothProbs = probs.map((p, i) => EMA_ALPHA * p + (1 - EMA_ALPHA) * smoothProbs[i]);
+        const topIdx = smoothProbs.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0])[0][1];
+        const shownLabel = classes[topIdx] || data.label;
+        const shownConf = smoothProbs[topIdx] ?? data.confidence;
+        labelEl.textContent = shownLabel;
+        confidenceEl.textContent = shownConf.toFixed(3);
+        setLabelStyle(shownConf);
+        updateTop3(smoothProbs, classes);
+      } else {
+        labelEl.textContent = data.label;
+        confidenceEl.textContent = (data.confidence || 0).toFixed(3);
+        setLabelStyle(data.confidence || 0);
+      }
+    }
+
+    async function runPosturePrediction(postureFrame) {
+      if (!postureModelReady || !postureFrame) {
+        labelEl.textContent = "posture model unavailable";
+        confidenceEl.textContent = "0.00";
+        setLabelStyle(0);
+        top3El.innerHTML = "<li>-</li><li>-</li><li>-</li>";
+        return;
+      }
+      const data = await callApi("/predict_posture", { frame: postureFrame });
+      labelEl.textContent = data.label;
+      confidenceEl.textContent = Number(data.confidence || 0).toFixed(3);
+      setLabelStyle(data.confidence || 0);
+      updateTop3(data.probs || [], data.classes || []);
+    }
+
+    function resolveMode() {
+      const selected = modeSelect.value;
+      if (selected === "posture" || selected === "action") return selected;
+      return motionScore < AUTO_MOTION_THRESHOLD ? "posture" : "action";
+    }
+
+    function updateFps() {
+      fpsCounter += 1;
+      const now = performance.now();
+      if (now - lastFpsAt >= 1000) {
+        const fps = (fpsCounter * 1000) / (now - lastFpsAt);
+        fpsEl.textContent = fps.toFixed(1);
+        fpsCounter = 0;
+        lastFpsAt = now;
+      }
+    }
+
+    async function onResults(results) {
+      if (!isRunning) return;
+      if (canvasEl.width !== videoEl.videoWidth || canvasEl.height !== videoEl.videoHeight) {
+        canvasEl.width = videoEl.videoWidth;
+        canvasEl.height = videoEl.videoHeight;
+      }
+
+      ctx.save();
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      if (results.poseLandmarks) {
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#5b8cff", lineWidth: 2 });
+        drawLandmarks(ctx, results.poseLandmarks, { color: "#22c55e", lineWidth: 1, radius: 2 });
+      }
+      ctx.restore();
+
+      const actionFrame = toActionFrame(results);
+      const postureFrame = toPostureFrame(results);
+      if (actionFrame) {
+        motionScore = computeMotion(actionFrame);
+        prevActionFrame = actionFrame;
+        frameWindow.push(actionFrame);
+        if (frameWindow.length > WINDOW_SIZE) frameWindow.shift();
+      }
+      motionScoreEl.textContent = motionScore.toFixed(3);
+      windowFillEl.textContent = `${frameWindow.length} / ${WINDOW_SIZE}`;
+      updateFps();
+
+      const now = Date.now();
+      if (now - lastPredictAt < PREDICT_EVERY_MS) return;
+      lastPredictAt = now;
+
+      const mode = resolveMode();
+      activeModeEl.textContent = modeSelect.value === "auto" ? `auto -> ${mode}` : mode;
+
+      try {
+        if (mode === "posture") {
+          smoothProbs = null;
+          await runPosturePrediction(postureFrame);
+        } else {
+          await runActionPrediction();
+        }
+      } catch (e) {
+        setLog(`Predict error: ${e.message}`);
+      }
+    }
+
+    async function start() {
+      if (isRunning) return;
+      const ok = await checkHealth();
+      if (!ok) return;
+
+      pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+      });
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+      pose.onResults(onResults);
+
+      camera = new Camera(videoEl, {
+        onFrame: async () => { if (pose) await pose.send({ image: videoEl }); },
+        width: 960,
+        height: 540,
+      });
+
+      frameWindow = [];
+      smoothProbs = null;
+      prevActionFrame = null;
+      motionScore = 0;
+      labelEl.textContent = "collecting...";
+      confidenceEl.textContent = "0.00";
+      top3El.innerHTML = "<li>-</li><li>-</li><li>-</li>";
+      setLog("Camera started.");
+
+      await camera.start();
+      isRunning = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    }
+
+    async function stop() {
+      if (!isRunning) return;
+      isRunning = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      frameWindow = [];
+      smoothProbs = null;
+      prevActionFrame = null;
+      motionScore = 0;
+      windowFillEl.textContent = "0 / 24";
+      motionScoreEl.textContent = "0.000";
+      labelEl.textContent = "stopped";
+      confidenceEl.textContent = "0.00";
+      top3El.innerHTML = "<li>-</li><li>-</li><li>-</li>";
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const stream = videoEl.srcObject;
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      videoEl.srcObject = null;
+      setLog("Camera stopped.");
+    }
+
+    startBtn.addEventListener("click", start);
+    stopBtn.addEventListener("click", stop);
+    healthBtn.addEventListener("click", checkHealth);
+    modeSelect.addEventListener("change", () => {
+      smoothProbs = null;
+      activeModeEl.textContent = modeSelect.value;
+    });
+
+    checkHealth();
+  </script>
+</body>
+</html>
