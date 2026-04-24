@@ -1,6 +1,6 @@
 """
 Train ST-GCN on NPZ windows: video-level train/val split, optional LR schedule,
-early stopping, confusion matrices and loss curves under docs/.
+early stopping, then save weights, plots, and confusion matrices under docs/.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from stgcn_model import STGCNClassifier
 
+# Fraction of videos (not windows) held out for validation.
 VAL_FRACTION = 0.2
 
 
@@ -32,6 +33,7 @@ def _video_ids_and_labels(vid_ids: np.ndarray, y: np.ndarray) -> tuple[np.ndarra
 
 
 def load_stgcn_npz(npz_path: Path) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray]:
+    """Load X [N,C,T,V,M], y, class names, and per-window video ids from NPZ."""
     if not npz_path.is_file():
         raise FileNotFoundError(f"Dataset not found: {npz_path}")
 
@@ -39,35 +41,11 @@ def load_stgcn_npz(npz_path: Path) -> tuple[np.ndarray, np.ndarray, list[str], n
     x = data["X"].astype(np.float32)
     y = data["y"].astype(np.int64)
     classes = data["classes"].tolist()
+    # Fallback ids: one pseudo-video per window (no real vid_id in file).
     vids = data["vid_ids"] if "vid_ids" in data.files else np.arange(len(y))
 
     print(f"Loaded: {npz_path}\nX {x.shape} | y {y.shape} | vids {vids.shape}\nClasses: {classes}")
     return x, y, classes, vids
-
-
-def maybe_subsample_by_videos(
-    x: np.ndarray,
-    y: np.ndarray,
-    vid_ids: np.ndarray,
-    max_videos: int | None,
-    random_state: int = 42,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    unique, y_vid = _video_ids_and_labels(vid_ids, y)
-    if max_videos is None or max_videos <= 0 or max_videos >= len(unique):
-        return x, y, vid_ids
-
-    try:
-        picked, _ = train_test_split(
-            unique, train_size=max_videos, stratify=y_vid, random_state=random_state
-        )
-    except ValueError:
-        rng = np.random.default_rng(random_state)
-        picked = rng.choice(unique, size=max_videos, replace=False)
-
-    mask = np.isin(vid_ids, picked)
-    x_s, y_s, v_s = x[mask], y[mask], vid_ids[mask]
-    print(f"Subsampled: {np.unique(v_s).size} videos, {len(y_s)} windows")
-    return x_s, y_s, v_s
 
 
 def build_dataloaders(
@@ -79,12 +57,14 @@ def build_dataloaders(
     num_workers: int = 0,
     pin_memory: bool = False,
 ) -> tuple[DataLoader, DataLoader]:
+    """Split by video id, then assign all windows of each video to train or val only."""
     unique, y_vid = _video_ids_and_labels(vid_ids, y)
     try:
         train_v, val_v = train_test_split(
             unique, test_size=VAL_FRACTION, stratify=y_vid, random_state=random_state
         )
     except ValueError:
+        # Too few samples per class for stratify — fall back to random split.
         train_v, val_v = train_test_split(unique, test_size=VAL_FRACTION, random_state=random_state)
 
     train_m, val_m = np.isin(vid_ids, train_v), np.isin(vid_ids, val_v)
@@ -117,6 +97,7 @@ def train_epoch(
     device: torch.device,
     scaler: torch.amp.GradScaler,
 ) -> float:
+    """One pass over train_loader; returns mean cross-entropy (AMP on CUDA)."""
     model.train()
     total = 0.0
     for xb, yb in loader:
@@ -165,6 +146,7 @@ def save_confusion(
     out_path: Path,
     title: str = "ST-GCN confusion matrix",
 ) -> None:
+    """Plot and save a sklearn confusion matrix PNG."""
     disp = ConfusionMatrixDisplay(
         confusion_matrix=confusion_matrix(y_true, y_pred), display_labels=classes
     )
@@ -184,6 +166,7 @@ def save_training_curves(
     val_accs: list[float],
     out_path: Path,
 ) -> None:
+    """Loss (train vs val) and val accuracy vs epoch — one figure."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig, (ax_l, ax_a) = plt.subplots(1, 2, figsize=(10, 4))
 
@@ -206,6 +189,7 @@ def save_training_curves(
 
 
 def _is_better(metric: str, val_acc: float, val_loss: float, best_acc: float, best_loss: float) -> bool:
+    """Whether this epoch beats the best so far (higher acc or lower loss)."""
     if metric == "val_acc":
         return val_acc > best_acc
     return val_loss < best_loss
@@ -224,7 +208,7 @@ def run_training_loop(
     patience: int,
     best_metric: str,
 ) -> dict[str, Any]:
-    """Returns history lists and best checkpoint tensors + val predictions."""
+    """Train for up to `epochs` epochs; early-stop if `best_metric` stalls `patience` times."""
     best_acc, best_loss = 0.0, float("inf")
     best_state = best_true = best_pred = None
     no_improve = 0
@@ -246,6 +230,7 @@ def run_training_loop(
 
         if _is_better(best_metric, acc, va_loss, best_acc, best_loss):
             best_acc, best_loss = acc, va_loss
+            # CPU copy for torch.save (portable across devices).
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
             best_true, best_pred = yt, yp
             no_improve = 0
@@ -269,6 +254,7 @@ def run_training_loop(
 
 
 def parse_args() -> argparse.Namespace:
+    """CLI: data path, optimisation, DataLoader, checkpoint metric."""
     p = argparse.ArgumentParser(description="Train ST-GCN on prepared skeleton windows.")
     p.add_argument("--data", type=str, default="data/stgcn/stgcn_windows.npz")
     p.add_argument("--epochs", type=int, default=30)
@@ -285,31 +271,24 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--base-channels", type=int, default=32)
     p.add_argument("--patience", type=int, default=6)
-    p.add_argument("--max-videos", type=int, default=0)
     p.add_argument("--cpu-threads", type=int, default=0)
-    p.add_argument("--fast", action="store_true", help="Shorter run with subsampled videos.")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if args.fast:
-        args.epochs = min(args.epochs, 15)
-        args.batch_size = max(args.batch_size, 128)
-        args.patience = min(args.patience, 4)
-        if args.max_videos <= 0:
-            args.max_videos = 240
     if args.cpu_threads > 0:
         torch.set_num_threads(args.cpu_threads)
 
+    # --- Data ---
     x, y, classes, vid_ids = load_stgcn_npz(Path(args.data))
-    x, y, vid_ids = maybe_subsample_by_videos(x, y, vid_ids, args.max_videos, random_state=42)
 
+    # --- Device & loaders ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
     if device.type == "cuda":
         print(f"CUDA: {torch.cuda.get_device_name(0)}")
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = True  # Faster fixed-size convs on GPU.
 
     train_loader, val_loader = build_dataloaders(
         x,
@@ -320,6 +299,7 @@ def main() -> None:
         pin_memory=device.type == "cuda",
     )
 
+    # --- Model & optimisation ---
     model = STGCNClassifier(num_classes=len(classes), base_channels=args.base_channels).to(device)
     criterion = nn.CrossEntropyLoss()
     optimiser = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -350,6 +330,7 @@ def main() -> None:
         best_metric=args.best_metric,
     )
 
+    # --- Save weights & label metadata ---
     models_dir = Path("models")
     models_dir.mkdir(parents=True, exist_ok=True)
     torch.save(out["best_state"], models_dir / "stgcn_best.pth")
@@ -362,6 +343,7 @@ def main() -> None:
     )
     print(f"Labels -> {models_dir / 'stgcn_label_info.pkl'}")
 
+    # --- Reports (curves + confusion matrices) ---
     docs = Path("docs")
     save_training_curves(
         out["epoch_list"],
@@ -374,12 +356,14 @@ def main() -> None:
     if out["best_state"] is not None:
         model.load_state_dict(out["best_state"])
 
+    # Val confusion: two filenames (legacy + explicit val name).
     for name, title in (
         ("confusion_matrix_stgcn_val.png", "ST-GCN validation (best checkpoint)"),
         ("confusion_matrix_stgcn.png", "ST-GCN validation (best checkpoint)"),
     ):
         save_confusion(out["best_true"], out["best_pred"], classes, docs / name, title=title)
 
+    # Train confusion at same best weights (diagnostic only).
     _, yt_tr, yp_tr, _ = evaluate(model, train_loader, device, None)
     save_confusion(yt_tr, yp_tr, classes, docs / "confusion_matrix_stgcn_train.png", "ST-GCN training (best checkpoint)")
 

@@ -97,20 +97,13 @@ Expected output:
 python train/train_stgcn.py --epochs 30 --batch-size 128 --num-workers 4
 ```
 
-### Fast iteration mode
-
-```bash
-python train/train_stgcn.py --fast --epochs 30 --batch-size 128 --num-workers 4
-```
-
-Key behaviors:
+Key behaviours:
 
 - Video-level split (prevents leakage across windows from same video).
 - Early stopping (`--patience`) and checkpointing use `--best-metric` (default `val_loss`; use `val_acc` for legacy behaviour).
 - Default learning rate `--lr 5e-4` (override with `--lr 1e-3` if you want the previous default).
 - `ReduceLROnPlateau` on validation loss (disable with `--no-lr-scheduler`).
 - AdamW `--weight-decay` (default `1e-4`; increase if overfitting).
-- Optional video subsampling (`--max-videos`).
 - Mixed precision on CUDA.
 
 Artifacts:
@@ -186,9 +179,8 @@ This pipeline is not the primary path for sequence-based exercise recognition.
 ### 2) Training is too slow
 
 - Ensure CUDA-enabled PyTorch is installed.
-- Use `--fast`.
 - Increase `--batch-size` if GPU memory allows.
-- Reduce sample count with `--max-videos`.
+- For a quick smoke test, lower `--epochs` and `--patience` (for example `--epochs 10 --patience 3`).
 
 ### 3) `ModuleNotFoundError: No module named 'torch'`
 
