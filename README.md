@@ -74,7 +74,7 @@ python -c "import torch; print(torch.__version__); print(torch.cuda.is_available
 Generate training windows from time-series landmarks:
 
 ```bash
-python train/engineer_stgcn_windows.py
+python train/data_preprocessing_stgcn.py
 ```
 
 Expected output:
@@ -193,7 +193,7 @@ This pipeline is not the primary path for sequence-based exercise recognition.
 
 ## Project Structure (Important Files)
 
-- `train/engineer_stgcn_windows.py` - sequence feature engineering and dataset builder
+- `train/data_preprocessing_stgcn.py` - ST-GCN sequence preprocessing and dataset builder
 - `train/stgcn_model.py` - ST-GCN model
 - `train/train_stgcn.py` - ST-GCN training entry
 - `src/skeleton_utils.py` - shared normalization utilities

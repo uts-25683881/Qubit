@@ -104,7 +104,7 @@ def build_sliding_windows() -> None:
     x_stgcn = np.transpose(x, (0, 3, 1, 2))  # [N, 3, T, V]
     x_stgcn = x_stgcn[:, :, :, :, None]      # [N, 3, T, V, 1]
 
-    # Save all artefacts required by training.
+    # Save all artefacts required for training.
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         OUTPUT_PATH,
