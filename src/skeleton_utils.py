@@ -45,7 +45,6 @@ def normalise_skeleton_frame(
     normalised = shifted / body_scale
     return np.clip(normalised, -clip_value, clip_value)
 
-
 def normalise_skeleton_sequence(
     sequence: np.ndarray,
     eps: float = 1e-6,
