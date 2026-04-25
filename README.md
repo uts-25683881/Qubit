@@ -122,10 +122,10 @@ Artifacts:
 Run webcam inference:
 
 ```bash
-python src/detect_stgcn.py --unknown-threshold 0.55
+python src/detect_stgcn.py --unknown-threshold 0.70
 ```
 
-Notes:
+Notes:11
 
 - Uses `pose_world_landmarks` first, then falls back to `pose_landmarks`.
 - Uses unknown gating to reduce forced misclassification.

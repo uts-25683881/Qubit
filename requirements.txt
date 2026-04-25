@@ -1,7 +1,10 @@
-mediapipe
+mediapipe==0.10.13
 opencv-python 
 numpy
 pandas
 torch
+joblib
+scikit-learn
+matplotlib
 fastapi
 uvicorn
