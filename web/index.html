@@ -6,38 +6,42 @@
   <title>Qubit Product UI</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #0b1220;
-      --panel: #121a2b;
-      --panel-2: #0f1726;
-      --text: #e6edf7;
-      --muted: #9fb0cc;
-      --line: #25314b;
-      --brand: #5b8cff;
-      --ok: #22c55e;
-      --warn: #f59e0b;
-      --err: #ef4444;
+      color-scheme: light;
+      --bg: #f3faf5;
+      --panel: #ffffff;
+      --panel-2: #f7fcf8;
+      --text: #103326;
+      --muted: #4d6a5f;
+      --line: #cfe4d7;
+      --brand: #34a853;
+      --ok: #1f9d45;
+      --warn: #b7791f;
+      --err: #c53030;
     }
     * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
     body {
       margin: 0;
       font-family: Inter, Segoe UI, Arial, sans-serif;
-      background: radial-gradient(circle at 20% 0%, #111b33 0%, var(--bg) 45%);
+      background: radial-gradient(circle at 20% 0%, #e5f6ea 0%, var(--bg) 45%);
       color: var(--text);
     }
     .layout {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
+      padding: 12px;
       display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 16px;
+      grid-template-columns: minmax(0, 2.3fr) minmax(320px, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
     }
     .card {
       background: linear-gradient(180deg, var(--panel), var(--panel-2));
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 14px;
+      min-height: 0;
     }
     .header {
       grid-column: 1 / -1;
@@ -59,11 +63,12 @@
     .video-wrap {
       position: relative;
       width: 100%;
-      aspect-ratio: 16 / 9;
+      flex: 1 1 auto;
+      min-height: 280px;
       overflow: hidden;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: #090f1d;
+      background: #eef8f1;
     }
     video, canvas {
       position: absolute;
@@ -77,12 +82,23 @@
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
-      margin-top: 10px;
+      margin-top: 8px;
       align-items: center;
+    }
+    .main-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
     }
     button, select {
       border: 1px solid var(--line);
-      background: #1a2640;
+      background: #eef8f1;
       color: var(--text);
       border-radius: 10px;
       padding: 8px 12px;
@@ -96,27 +112,55 @@
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
-    .stat { background: #111b30; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+    .stat { background: #f6fbf8; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
     .stat .k { font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; }
     .stat .v { font-size: 1.05rem; font-weight: 600; }
     .label-good { color: var(--ok); }
     .label-mid { color: var(--warn); }
     .label-bad { color: var(--err); }
-    .top-list { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+    .top3-box {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f6fbf8;
+    }
+    .top3-title {
+      margin: 0 0 6px 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .top-list { margin: 0; padding-left: 18px; color: var(--muted); }
     .small { color: var(--muted); font-size: 0.86rem; margin-top: 8px; line-height: 1.45; }
     .mono {
       font-family: Consolas, monospace;
       white-space: pre-wrap;
       word-break: break-word;
-      background: #0d1527;
+      background: #f2faf5;
       border: 1px solid var(--line);
       border-radius: 10px;
       padding: 10px;
-      min-height: 82px;
+      flex: 1 1 auto;
+      min-height: 96px;
       margin-top: 10px;
-      color: #c8dbff;
+      color: #1b4d35;
+      overflow: auto;
     }
-    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+    @media (max-width: 980px) {
+      html, body { overflow: auto; }
+      .layout {
+        width: 100%;
+        height: auto;
+        min-height: 100vh;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
+      }
+      .side-panel .mono {
+        min-height: 120px;
+        max-height: 220px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -124,12 +168,12 @@
     <section class="card header">
       <div>
         <h1 class="title">Qubit Product UI</h1>
-        <p class="subtitle">Sitting posture + exercise action in one interface</p>
+        <p class="subtitle">All-in-one UI for home office and home workout</p>
       </div>
       <span id="apiState" class="badge">API: checking...</span>
     </section>
 
-    <section class="card">
+    <section class="card main-panel">
       <div class="video-wrap">
         <video id="video" autoplay muted playsinline></video>
         <canvas id="overlay"></canvas>
@@ -143,12 +187,9 @@
           <option value="action">Action</option>
         </select>
       </div>
-      <p class="small">
-        Auto mode picks posture model when motion is low, otherwise uses action model.
-      </p>
     </section>
 
-    <section class="card">
+    <section class="card side-panel">
       <div class="stat-grid">
         <div class="stat"><div class="k">Mode</div><div id="activeMode" class="v">auto</div></div>
         <div class="stat"><div class="k">Current Label</div><div id="label" class="v">waiting...</div></div>
@@ -157,8 +198,10 @@
         <div class="stat"><div class="k">Action Window Fill</div><div id="windowFill" class="v">0 / 24</div></div>
         <div class="stat"><div class="k">Motion Score</div><div id="motionScore" class="v">0.000</div></div>
       </div>
-      <h3>Top-3 Classes</h3>
-      <ol id="top3" class="top-list"><li>-</li><li>-</li><li>-</li></ol>
+      <section class="top3-box">
+        <h3 class="top3-title">Top 3 Postures</h3>
+        <ol id="top3" class="top-list"><li>-</li><li>-</li><li>-</li></ol>
+      </section>
       <div id="log" class="mono">Ready.</div>
     </section>
   </main>
@@ -206,8 +249,8 @@
     function setLog(text) { logEl.textContent = text; }
     function setApiBadge(ok, text) {
       apiState.textContent = `API: ${text}`;
-      apiState.style.color = ok ? "#86efac" : "#fda4af";
-      apiState.style.borderColor = ok ? "#14532d" : "#7f1d1d";
+      apiState.style.color = ok ? "#1f7a3e" : "#b83232";
+      apiState.style.borderColor = ok ? "#8fd0a3" : "#e3a6a6";
     }
 
     function setLabelStyle(conf) {
@@ -337,7 +380,7 @@
       ctx.save();
       ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
       if (results.poseLandmarks) {
-        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#5b8cff", lineWidth: 2 });
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#2f9e44", lineWidth: 2 });
         drawLandmarks(ctx, results.poseLandmarks, { color: "#22c55e", lineWidth: 1, radius: 2 });
       }
       ctx.restore();
