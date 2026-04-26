@@ -284,7 +284,7 @@
         if (!smoothProbs) smoothProbs = probs.slice();
         else smoothProbs = probs.map((p, i) => EMA_ALPHA * p + (1 - EMA_ALPHA) * smoothProbs[i]);
         const topIdx = smoothProbs.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0])[0][1];
-        const shownLabel = classes[topIdx] || data.label;
+        const shownLabel = data.label === "idle" ? "idle" : (classes[topIdx] || data.label);
         const shownConf = smoothProbs[topIdx] ?? data.confidence;
         labelEl.textContent = shownLabel;
         confidenceEl.textContent = shownConf.toFixed(3);

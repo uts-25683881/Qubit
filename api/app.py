@@ -160,7 +160,7 @@ def predict(req: PredictRequest):
     pred_idx = int(np.argmax(probs))
     top_conf = float(probs[pred_idx])
     top_label = CLASSES[pred_idx]
-    out_label = f"unknown({top_label})" if top_conf < UNKNOWN_THRESHOLD else top_label
+    out_label = "idle" if top_conf < UNKNOWN_THRESHOLD else top_label
     return PredictResponse(
         label=out_label,
         confidence=top_conf,

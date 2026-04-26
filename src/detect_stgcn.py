@@ -155,7 +155,7 @@ def run_demo(unknown_threshold: float):
                 top3_text = " | ".join([f"{classes[i]}:{smooth_probs[i]:.2f}" for i in top_indices])
 
                 if confidence < unknown_threshold:
-                    label_text = f"unknown({classes[pred_idx]})"
+                    label_text = "idle"
                     conf_text = f"conf: {confidence:.2f}"
                     color = (0, 255, 255)
                 else:
