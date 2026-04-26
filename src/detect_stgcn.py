@@ -26,7 +26,7 @@ MODEL_PATH = BASE_DIR / "models" / "stgcn_best.pth"
 LABEL_INFO_PATH = BASE_DIR / "models" / "stgcn_label_info.pkl"
 WINDOW_SIZE = 24
 EMA_ALPHA = 0.6
-UNKNOWN_THRESHOLD = 0.65
+UNKNOWN_THRESHOLD = 0.70
 RESET_MISSING_FRAMES = 8
 
 

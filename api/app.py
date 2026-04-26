@@ -29,7 +29,7 @@ POSTURE_SCALER_PATH = BASE_DIR / "models" / "scaler.pkl"
 POSTURE_LABEL_ENCODER_PATH = BASE_DIR / "models" / "label_encoder.pkl"
 WEB_INDEX_PATH = BASE_DIR / "web" / "index.html"
 WEB_TESTER_PATH = BASE_DIR / "web" / "tester.html"
-UNKNOWN_THRESHOLD = 0.65
+UNKNOWN_THRESHOLD = 0.70
 
 app = FastAPI(title="Qubit ST-GCN API", version="1.0.0")
 
