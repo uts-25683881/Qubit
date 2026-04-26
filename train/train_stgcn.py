@@ -1,6 +1,7 @@
 """
-Train ST-GCN on NPZ windows: video-level train/val split, optional LR schedule,
-early stopping, then save weights, plots, and confusion matrices under docs/.
+Train ST-GCN on NPZ windows: video-level train / val / test split, optional LR schedule,
+early stopping on validation only, per-epoch curves on all three splits, then save weights,
+plots, and confusion matrices under docs/.
 """
 
 from __future__ import annotations
@@ -19,10 +20,16 @@ from sklearn.model_selection import train_test_split
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset
 
-from stgcn_model import STGCNClassifier
+try:
+    from .stgcn_model import STGCNClassifier
+except ImportError:
+    # `python train/train_stgcn.py` (not a package); `train/` is already on sys.path[0].
+    from stgcn_model import STGCNClassifier
 
-# Fraction of videos (not windows) held out for validation.
-VAL_FRACTION = 0.2
+# Video-level splits: first hold out test, then split remaining into train vs val.
+# Resulting proportions (approximately): 60% train / 20% val / 20% test of videos.
+TEST_VIDEO_FRACTION = 0.2
+VAL_OF_TRAINVAL_VIDEO_FRACTION = 0.25
 
 
 def _video_ids_and_labels(vid_ids: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -48,6 +55,41 @@ def load_stgcn_npz(npz_path: Path) -> tuple[np.ndarray, np.ndarray, list[str], n
     return x, y, classes, vids
 
 
+def _split_train_val_test_videos(
+    unique: np.ndarray,
+    y_vid: np.ndarray,
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return (train_video_ids, val_video_ids, test_video_ids) with stratify when possible."""
+    lab_by_vid = {int(u): int(lab) for u, lab in zip(unique, y_vid)}
+    try:
+        trainval_v, test_v = train_test_split(
+            unique,
+            test_size=TEST_VIDEO_FRACTION,
+            stratify=y_vid,
+            random_state=random_state,
+        )
+    except ValueError:
+        trainval_v, test_v = train_test_split(
+            unique, test_size=TEST_VIDEO_FRACTION, random_state=random_state
+        )
+    y_tv = np.array([lab_by_vid[int(v)] for v in trainval_v], dtype=np.int64)
+    try:
+        train_v, val_v = train_test_split(
+            trainval_v,
+            test_size=VAL_OF_TRAINVAL_VIDEO_FRACTION,
+            stratify=y_tv,
+            random_state=random_state,
+        )
+    except ValueError:
+        train_v, val_v = train_test_split(
+            trainval_v,
+            test_size=VAL_OF_TRAINVAL_VIDEO_FRACTION,
+            random_state=random_state,
+        )
+    return train_v, val_v, test_v
+
+
 def build_dataloaders(
     x: np.ndarray,
     y: np.ndarray,
@@ -56,20 +98,17 @@ def build_dataloaders(
     random_state: int = 42,
     num_workers: int = 0,
     pin_memory: bool = False,
-) -> tuple[DataLoader, DataLoader]:
-    """Split by video id, then assign all windows of each video to train or val only."""
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """Split by video id into train / val / test; each window stays with its video."""
     unique, y_vid = _video_ids_and_labels(vid_ids, y)
-    try:
-        train_v, val_v = train_test_split(
-            unique, test_size=VAL_FRACTION, stratify=y_vid, random_state=random_state
-        )
-    except ValueError:
-        # Too few samples per class for stratify — fall back to random split.
-        train_v, val_v = train_test_split(unique, test_size=VAL_FRACTION, random_state=random_state)
+    train_v, val_v, test_v = _split_train_val_test_videos(unique, y_vid, random_state)
 
-    train_m, val_m = np.isin(vid_ids, train_v), np.isin(vid_ids, val_v)
+    train_m = np.isin(vid_ids, train_v)
+    val_m = np.isin(vid_ids, val_v)
+    test_m = np.isin(vid_ids, test_v)
     x_tr, y_tr = x[train_m], y[train_m]
     x_va, y_va = x[val_m], y[val_m]
+    x_te, y_te = x[test_m], y[test_m]
 
     dl_kw: dict[str, Any] = {
         "batch_size": batch_size,
@@ -83,10 +122,14 @@ def build_dataloaders(
     val_loader = DataLoader(
         TensorDataset(torch.from_numpy(x_va), torch.from_numpy(y_va)), shuffle=False, **dl_kw
     )
+    test_loader = DataLoader(
+        TensorDataset(torch.from_numpy(x_te), torch.from_numpy(y_te)), shuffle=False, **dl_kw
+    )
 
     print(f"Train: {len(train_loader.dataset)} windows / {np.unique(train_v).size} videos")
     print(f"Val:   {len(val_loader.dataset)} windows / {np.unique(val_v).size} videos")
-    return train_loader, val_loader
+    print(f"Test:  {len(test_loader.dataset)} windows / {np.unique(test_v).size} videos")
+    return train_loader, val_loader, test_loader
 
 
 def train_epoch(
@@ -163,25 +206,31 @@ def save_training_curves(
     epochs: list[int],
     train_losses: list[float],
     val_losses: list[float],
+    test_losses: list[float],
+    train_accs: list[float],
     val_accs: list[float],
+    test_accs: list[float],
     out_path: Path,
 ) -> None:
-    """Loss (train vs val) and val accuracy vs epoch — one figure."""
+    """Train / val / test loss and accuracy vs epoch (test is monitored only, not used for selection)."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig, (ax_l, ax_a) = plt.subplots(1, 2, figsize=(10, 4))
+    fig, (ax_l, ax_a) = plt.subplots(1, 2, figsize=(11, 4))
 
     ax_l.plot(epochs, train_losses, "o-", ms=3, label="Train loss")
     ax_l.plot(epochs, val_losses, "o-", ms=3, label="Val loss")
+    ax_l.plot(epochs, test_losses, "o-", ms=3, label="Test loss")
     ax_l.set(xlabel="Epoch", ylabel="Cross-entropy", title="ST-GCN loss")
     ax_l.legend()
     ax_l.grid(True, alpha=0.3)
 
-    ax_a.plot(epochs, val_accs, "o-", ms=3, color="tab:green", label="Val accuracy")
-    ax_a.set(xlabel="Epoch", ylabel="Accuracy", title="ST-GCN validation accuracy", ylim=(0, 1))
+    ax_a.plot(epochs, train_accs, "o-", ms=3, label="Train acc")
+    ax_a.plot(epochs, val_accs, "o-", ms=3, label="Val acc")
+    ax_a.plot(epochs, test_accs, "o-", ms=3, label="Test acc")
+    ax_a.set(xlabel="Epoch", ylabel="Accuracy", title="ST-GCN accuracy", ylim=(0, 1))
     ax_a.legend()
     ax_a.grid(True, alpha=0.3)
 
-    fig.suptitle("ST-GCN training curves")
+    fig.suptitle("ST-GCN training curves (train / val / test)")
     fig.tight_layout()
     fig.savefig(out_path)
     plt.close(fig)
@@ -199,6 +248,7 @@ def run_training_loop(
     model: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
+    test_loader: DataLoader,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     scaler: torch.amp.GradScaler,
@@ -208,16 +258,19 @@ def run_training_loop(
     patience: int,
     best_metric: str,
 ) -> dict[str, Any]:
-    """Train for up to `epochs` epochs; early-stop if `best_metric` stalls `patience` times."""
+    """Train for up to `epochs` epochs; early-stop on val only; log train/val/test each epoch."""
     best_acc, best_loss = 0.0, float("inf")
     best_state = best_true = best_pred = None
     no_improve = 0
 
-    ep, tr_l, va_l, va_a = [], [], [], []
+    ep, tr_l, va_l, te_l = [], [], [], []
+    tr_a, va_a, te_a = [], [], []
 
     for epoch in range(1, epochs + 1):
         tr_loss = train_epoch(model, train_loader, criterion, optimizer, device, scaler)
+        tr_acc, _, _, _ = evaluate(model, train_loader, device, criterion)
         acc, yt, yp, va_loss = evaluate(model, val_loader, device, criterion)
+        te_acc, _, _, te_loss = evaluate(model, test_loader, device, criterion)
         if scheduler is not None:
             scheduler.step(va_loss)
 
@@ -225,8 +278,15 @@ def run_training_loop(
         ep.append(epoch)
         tr_l.append(tr_loss)
         va_l.append(va_loss)
+        te_l.append(te_loss)
+        tr_a.append(tr_acc)
         va_a.append(acc)
-        print(f"Epoch {epoch:02d} | train_loss={tr_loss:.4f} | val_loss={va_loss:.4f} | val_acc={acc:.4f} | lr={lr:.2e}")
+        te_a.append(te_acc)
+        print(
+            f"Epoch {epoch:02d} | tr_loss={tr_loss:.4f} tr_acc={tr_acc:.4f} | "
+            f"val_loss={va_loss:.4f} val_acc={acc:.4f} | "
+            f"test_loss={te_loss:.4f} test_acc={te_acc:.4f} | lr={lr:.2e}"
+        )
 
         if _is_better(best_metric, acc, va_loss, best_acc, best_loss):
             best_acc, best_loss = acc, va_loss
@@ -244,7 +304,10 @@ def run_training_loop(
         "epoch_list": ep,
         "train_losses": tr_l,
         "val_losses": va_l,
+        "test_losses": te_l,
+        "train_accs": tr_a,
         "val_accs": va_a,
+        "test_accs": te_a,
         "best_state": best_state,
         "best_true": best_true,
         "best_pred": best_pred,
@@ -290,7 +353,7 @@ def main() -> None:
         print(f"CUDA: {torch.cuda.get_device_name(0)}")
         torch.backends.cudnn.benchmark = True  # Faster fixed-size convs on GPU.
 
-    train_loader, val_loader = build_dataloaders(
+    train_loader, val_loader, test_loader = build_dataloaders(
         x,
         y,
         vid_ids,
@@ -320,6 +383,7 @@ def main() -> None:
         model,
         train_loader,
         val_loader,
+        test_loader,
         criterion,
         optimiser,
         scaler,
@@ -349,7 +413,10 @@ def main() -> None:
         out["epoch_list"],
         out["train_losses"],
         out["val_losses"],
+        out["test_losses"],
+        out["train_accs"],
         out["val_accs"],
+        out["test_accs"],
         docs / "stgcn_training_curves.png",
     )
 
@@ -363,9 +430,10 @@ def main() -> None:
     ):
         save_confusion(out["best_true"], out["best_pred"], classes, docs / name, title=title)
 
-    # Train confusion at same best weights (diagnostic only).
     _, yt_tr, yp_tr, _ = evaluate(model, train_loader, device, None)
-    save_confusion(yt_tr, yp_tr, classes, docs / "confusion_matrix_stgcn_train.png", "ST-GCN training (best checkpoint)")
+    save_confusion(yt_tr, yp_tr, classes, docs / "confusion_matrix_stgcn_train.png", "ST-GCN train (best checkpoint)")
+    _, yt_te, yp_te, _ = evaluate(model, test_loader, device, None)
+    save_confusion(yt_te, yp_te, classes, docs / "confusion_matrix_stgcn_test.png", "ST-GCN test (best checkpoint)")
 
 
 if __name__ == "__main__":

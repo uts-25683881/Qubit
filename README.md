@@ -99,7 +99,8 @@ python train/train_stgcn.py --epochs 30 --batch-size 128 --num-workers 4
 
 Key behaviours:
 
-- Video-level split (prevents leakage across windows from same video).
+- Video-level **train / validation / test** split (~60% / 20% / 20% by video): 20% of videos for test, then 25% of the remainder for validation; prevents leakage across windows from the same video.
+- Each epoch logs **train, validation, and test** loss and accuracy; curves are saved to `docs/stgcn_training_curves.png` (test is for monitoring only — selection uses validation).
 - Early stopping (`--patience`) and checkpointing use `--best-metric` (default `val_loss`; use `val_acc` for legacy behaviour).
 - Default learning rate `--lr 5e-4` (override with `--lr 1e-3` if you want the previous default).
 - `ReduceLROnPlateau` on validation loss (disable with `--no-lr-scheduler`).
@@ -110,10 +111,11 @@ Artifacts:
 
 - `models/stgcn_best.pth`
 - `models/stgcn_label_info.pkl`
-- `docs/stgcn_training_curves.png` (train/val loss and val accuracy per epoch)
+- `docs/stgcn_training_curves.png` (train / val / test loss and accuracy per epoch)
 - `docs/confusion_matrix_stgcn.png` (validation, best checkpoint; same as `confusion_matrix_stgcn_val.png`)
 - `docs/confusion_matrix_stgcn_val.png`
-- `docs/confusion_matrix_stgcn_train.png` (training set, best checkpoint)
+- `docs/confusion_matrix_stgcn_train.png`
+- `docs/confusion_matrix_stgcn_test.png` (held-out test videos, best checkpoint)
 
 ---
 
