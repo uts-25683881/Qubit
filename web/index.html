@@ -137,7 +137,6 @@
       <div class="toolbar">
         <button id="startBtn" class="primary">Start Camera</button>
         <button id="stopBtn" disabled>Stop Camera</button>
-        <button id="healthBtn">Check Backend</button>
         <select id="modeSelect" title="Inference mode">
           <option value="auto">Auto</option>
           <option value="posture">Posture</option>
@@ -179,7 +178,6 @@
 
     const startBtn = document.getElementById("startBtn");
     const stopBtn = document.getElementById("stopBtn");
-    const healthBtn = document.getElementById("healthBtn");
     const modeSelect = document.getElementById("modeSelect");
 
     const apiState = document.getElementById("apiState");
@@ -437,7 +435,6 @@
 
     startBtn.addEventListener("click", start);
     stopBtn.addEventListener("click", stop);
-    healthBtn.addEventListener("click", checkHealth);
     modeSelect.addEventListener("change", () => {
       smoothProbs = null;
       activeModeEl.textContent = modeSelect.value;
