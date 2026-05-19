@@ -1,20 +1,204 @@
 # Qubit
 
-The purpose of this PoC is to validate the feasibility of the core technological workflow. This prototype maintains minimal functionality and does not support processing multiple complex application scenarios, while also not requiring a complete user interface or posture scoring mechanism. Its primary objective is to demonstrate that the fundamental components of the system can be effectively integrated, while providing posture analysis and feedback evaluation within a real-time operational environment.
+Qubit is a posture and exercise recognition PoC built around MediaPipe skeleton landmarks.
 
+The project currently contains two tracks:
 
+- Legacy single-frame posture pipeline (RandomForest/SVM).
+- New sequence-based ST-GCN exercise recognition pipeline (recommended).
 
-## Setup
+---
 
-### 1. Install dependencies:
+## Current Recommended Pipeline (ST-GCN)
+
+### Objective
+
+Recognize 5 exercise classes from skeleton sequences:
+
+- `jumping_jack`
+- `pull_up`
+- `push_up`
+- `situp`
+- `squat`
+
+### Data Source
+
+- `dataset/Physical Exercise Recognition Time Series Dataset/landmarks.csv`
+- `dataset/Physical Exercise Recognition Time Series Dataset/labels.csv`
+
+### Core Steps
+
+1. Build sliding-window sequence dataset (`[N, C, T, V, M]`).
+2. Train ST-GCN model.
+3. Run real-time webcam demo.
+4. (Optional) Serve predictions via FastAPI for UI integration.
+
+---
+
+## Environment Setup
+
+### 1) Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
-### 2. Download MediaPipe model
-Run this once from the project root:
+`requirements.txt` includes:
 
-wget -q https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task
+- `mediapipe`
+- `opencv-python`
+- `numpy`
+- `pandas`
+- `torch`
+- `fastapi`
+- `uvicorn`
 
-Or on Windows (PowerShell):
-Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task" -OutFile "pose_landmarker_heavy.task"
+### 2) GPU setup (recommended for training speed)
 
-**Place the downloaded file 'pose_landmarker_heavy.task' in models/ folder.**
+If you use NVIDIA GPU, install CUDA-enabled PyTorch in your conda env:
+
+```bash
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+```
+
+Verify:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no gpu')"
+```
+
+---
+
+## Build ST-GCN Dataset
+
+Generate training windows from time-series landmarks:
+
+```bash
+python src/data_preprocessing_stgcn.py
+```
+
+Expected output:
+
+- `data/stgcn/stgcn_windows.npz`
+- Console stats including:
+  - `X shape`
+  - `y shape`
+  - `classes`
+  - `feature_stats`
+  - `skipped_windows`
+
+---
+
+## Train ST-GCN
+
+### Standard training
+
+```bash
+python train/train_stgcn.py --epochs 30 --batch-size 128 --num-workers 4
+```
+
+Key behaviours:
+
+- Video-level **train / validation / test** split (~60% / 20% / 20% by video): 20% of videos for test, then 25% of the remainder for validation; prevents leakage across windows from the same video.
+- Each epoch logs **train, validation, and test** loss and accuracy; curves are saved to `docs/stgcn_training_curves.png` (test is for monitoring only — selection uses validation).
+- Early stopping (`--patience`) and checkpointing use `--best-metric` (default `val_loss`; use `val_acc` for legacy behaviour).
+- Default learning rate `--lr 5e-4` (override with `--lr 1e-3` if you want the previous default).
+- `ReduceLROnPlateau` on validation loss (disable with `--no-lr-scheduler`).
+- AdamW `--weight-decay` (default `1e-4`; increase if overfitting).
+- Mixed precision on CUDA.
+
+Artifacts:
+
+- `models/stgcn_best.pth`
+- `models/stgcn_label_info.pkl`
+- `docs/stgcn_training_curves.png` (train / val / test loss and accuracy per epoch)
+- `docs/confusion_matrix_stgcn.png` (validation, best checkpoint; same as `confusion_matrix_stgcn_val.png`)
+- `docs/confusion_matrix_stgcn_val.png`
+- `docs/confusion_matrix_stgcn_train.png`
+- `docs/confusion_matrix_stgcn_test.png` (held-out test videos, best checkpoint)
+
+---
+
+## Real-Time Demo
+
+Run webcam inference:
+
+```bash
+python src/detect_stgcn.py --unknown-threshold 0.70
+# If jumping_jack stays as idle, lower its bar only:
+python src/detect_stgcn.py --jumping-jack-min-conf 0.45
+```
+
+Notes:
+
+- Uses `pose_world_landmarks` first, then falls back to `pose_landmarks`.
+- Uses unknown gating to reduce forced misclassification (`jumping_jack` defaults to a lower min confidence than other classes; see `MIN_CONFIDENCE_BY_CLASS` in `src/stgcn_inference.py`).
+- Displays top-3 probabilities on screen.
+
+---
+
+## API for UI Integration
+
+Start server:
+
+```bash
+uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Endpoints:
+
+- `GET /health`
+- `POST /predict` with `window` shape `[T, 33, 3]`
+
+Response includes:
+
+- `label` (may be `idle` when confidence is below the class threshold)
+- `confidence`
+- `probs`
+- `classes`
+
+---
+
+## Legacy Pipeline (Single-Frame)
+
+These files are kept for baseline/reference:
+
+- `src/extract.py`
+- `train/train.py`
+- `src/detect.py`
+
+This pipeline is not the primary path for sequence-based exercise recognition.
+
+---
+
+## Troubleshooting
+
+### 1) Model predicts one class too often
+
+- Rebuild NPZ and retrain.
+- Confirm `feature_stats` are reasonable after dataset build.
+- Use real webcam input (avoid testing by filming a screen).
+- Tune `--unknown-threshold` and/or `--jumping-jack-min-conf` (demo) or `MIN_CONFIDENCE_BY_CLASS` in `src/stgcn_inference.py`.
+
+### 2) Training is too slow
+
+- Ensure CUDA-enabled PyTorch is installed.
+- Increase `--batch-size` if GPU memory allows.
+- For a quick smoke test, lower `--epochs` and `--patience` (for example `--epochs 10 --patience 3`).
+
+### 3) `ModuleNotFoundError: No module named 'torch'`
+
+- Torch is not installed in the active environment.
+- Install torch in the same environment used to run scripts.
+
+---
+
+## Project Structure (Important Files)
+
+- `src/data_preprocessing_stgcn.py` - ST-GCN sequence preprocessing and dataset builder
+- `train/stgcn_model.py` - ST-GCN model
+- `train/train_stgcn.py` - ST-GCN training entry
+- `src/skeleton_utils.py` - shared skeleton normalization
+- `src/stgcn_inference.py` - shared ST-GCN load, thresholds, and inference helpers
+- `src/detect_stgcn.py` - real-time webcam demo
+- `api/app.py` - FastAPI service for UI/backend integration

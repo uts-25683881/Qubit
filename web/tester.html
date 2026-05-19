@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qubit API Tester</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0f1115;
+      color: #e6edf7;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+    }
+    .card {
+      max-width: 960px;
+      margin: 0 auto;
+      background: #1a1f29;
+      border: 1px solid #2b3240;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    button {
+      margin-right: 8px;
+      border: 1px solid #2b3240;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: #24304a;
+      color: #fff;
+      cursor: pointer;
+    }
+    textarea, pre {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #2b3240;
+      background: #121720;
+      color: #dbe6ff;
+      font-family: Consolas, monospace;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+    textarea { min-height: 240px; margin-top: 12px; }
+    pre { min-height: 80px; white-space: pre-wrap; }
+    a { color: #8fb6ff; }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>Qubit API Tester</h1>
+    <p>Product UI: <a href="/">/</a></p>
+    <button id="healthBtn">Check Health</button>
+    <button id="sampleBtn">Generate Sample</button>
+    <button id="predictBtn">Run Predict</button>
+    <textarea id="payload"></textarea>
+    <pre id="out">Ready.</pre>
+  </section>
+
+  <script>
+    const payload = document.getElementById("payload");
+    const out = document.getElementById("out");
+    function sample() {
+      const t = 24, v = 33, w = [];
+      for (let i = 0; i < t; i++) {
+        const f = [];
+        for (let j = 0; j < v; j++) f.push([Math.sin(i / 10), Math.cos(i / 10), 0]);
+        w.push(f);
+      }
+      return { window: w };
+    }
+    async function call(path, method, body) {
+      const res = await fetch(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json();
+      out.textContent = JSON.stringify(data, null, 2);
+    }
+    document.getElementById("sampleBtn").onclick = () => { payload.value = JSON.stringify(sample(), null, 2); };
+    document.getElementById("healthBtn").onclick = () => call("/health", "GET");
+    document.getElementById("predictBtn").onclick = () => call("/predict", "POST", JSON.parse(payload.value));
+    payload.value = JSON.stringify(sample(), null, 2);
+  </script>
+</body>
+</html>

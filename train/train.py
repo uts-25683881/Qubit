@@ -1,3 +1,4 @@
+import argparse
 import os
 import joblib
 import pandas as pd
@@ -16,6 +17,25 @@ from sklearn.metrics import (
 
 LANDMARK_START = 0
 NUM_LANDMARKS = 33
+
+ROBOFLOW_FINE_LABELS = frozenset(
+    {"leaning_backward", "leaning_forward", "leaning_left", "leaning_right", "upright"}
+)
+
+
+def collapse_roboflow_fine_to_binary(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    s = out["class"].astype(str)
+    mask = s.isin(ROBOFLOW_FINE_LABELS)
+    if not mask.any():
+        return out
+
+    correct_mask = s.isin(["upright", "leaning_backward", "leaning_forward"])
+    out.loc[mask & correct_mask, "class"] = "correct"
+    out.loc[mask & ~correct_mask, "class"] = "incorrect"
+    print("Roboflow 5-class -> binary (fine-labeled rows only, leaning_backward/leaning_forward considered correct)")
+    print(out.loc[mask, "class"].value_counts())
+    return out
 
 
 def load_dataset(file_path):
@@ -139,8 +159,8 @@ def save_artifacts(model, scaler, label_encoder, model_path, scaler_path, encode
     print(f"Label encoder saved to: {encoder_path}")
 
 
-def main():
-    data_path = "data/landmarks/all.csv"
+def main(*, use_binary: bool):
+    data_path = "data/landmarks/all_merged.csv"
 
     model_dir = "models"
     docs_dir = "docs"
@@ -154,6 +174,8 @@ def main():
     confusion_matrix_path = os.path.join(docs_dir, "confusion_matrix.png")
 
     df = load_dataset(data_path)
+    if use_binary:
+        df = collapse_roboflow_fine_to_binary(df)
     X, y = prepare_features_and_labels(df)
     y_encoded, label_encoder = encode_labels(y)
 
@@ -176,4 +198,21 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Train posture classifier on landmarks CSV.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--binary",
+        dest="use_binary",
+        action="store_const",
+        const=True,
+        help="Collapse Roboflow 5 labels to correct/incorrect",
+    )
+    group.add_argument(
+        "--multiclass",
+        dest="use_binary",
+        action="store_const",
+        const=False,
+        help="Train on raw 'class' column (e.g. upright / leaning_*)",
+    )
+    args = parser.parse_args()
+    main(use_binary=args.use_binary)
