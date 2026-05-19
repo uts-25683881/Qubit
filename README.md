@@ -74,7 +74,7 @@ python -c "import torch; print(torch.__version__); print(torch.cuda.is_available
 Generate training windows from time-series landmarks:
 
 ```bash
-python train/data_preprocessing_stgcn.py
+python src/data_preprocessing_stgcn.py
 ```
 
 Expected output:
@@ -125,12 +125,14 @@ Run webcam inference:
 
 ```bash
 python src/detect_stgcn.py --unknown-threshold 0.70
+# If jumping_jack stays as idle, lower its bar only:
+python src/detect_stgcn.py --jumping-jack-min-conf 0.45
 ```
 
-Notes:11
+Notes:
 
 - Uses `pose_world_landmarks` first, then falls back to `pose_landmarks`.
-- Uses unknown gating to reduce forced misclassification.
+- Uses unknown gating to reduce forced misclassification (`jumping_jack` defaults to a lower min confidence than other classes; see `MIN_CONFIDENCE_BY_CLASS` in `src/stgcn_inference.py`).
 - Displays top-3 probabilities on screen.
 
 ---
@@ -150,7 +152,7 @@ Endpoints:
 
 Response includes:
 
-- `label` (may be `unknown(...)`)
+- `label` (may be `idle` when confidence is below the class threshold)
 - `confidence`
 - `probs`
 - `classes`
@@ -176,7 +178,7 @@ This pipeline is not the primary path for sequence-based exercise recognition.
 - Rebuild NPZ and retrain.
 - Confirm `feature_stats` are reasonable after dataset build.
 - Use real webcam input (avoid testing by filming a screen).
-- Tune `--unknown-threshold`.
+- Tune `--unknown-threshold` and/or `--jumping-jack-min-conf` (demo) or `MIN_CONFIDENCE_BY_CLASS` in `src/stgcn_inference.py`.
 
 ### 2) Training is too slow
 
@@ -193,9 +195,10 @@ This pipeline is not the primary path for sequence-based exercise recognition.
 
 ## Project Structure (Important Files)
 
-- `train/data_preprocessing_stgcn.py` - ST-GCN sequence preprocessing and dataset builder
+- `src/data_preprocessing_stgcn.py` - ST-GCN sequence preprocessing and dataset builder
 - `train/stgcn_model.py` - ST-GCN model
 - `train/train_stgcn.py` - ST-GCN training entry
-- `src/skeleton_utils.py` - shared normalization utilities
+- `src/skeleton_utils.py` - shared skeleton normalization
+- `src/stgcn_inference.py` - shared ST-GCN load, thresholds, and inference helpers
 - `src/detect_stgcn.py` - real-time webcam demo
 - `api/app.py` - FastAPI service for UI/backend integration

@@ -13,29 +13,34 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 
-# Make sure we can import training modules from project root.
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from train.stgcn_model import STGCNClassifier  # noqa: E402
 from src.skeleton_utils import normalise_skeleton_sequence  # noqa: E402
+from src.stgcn_inference import (  # noqa: E402
+    IDLE_LABEL,
+    MIN_CONFIDENCE_BY_CLASS,
+    UNKNOWN_THRESHOLD,
+    label_from_prediction,
+    load_stgcn_model,
+    predict_probs,
+    sequence_to_tensor,
+)
+from train.stgcn_model import STGCNClassifier  # noqa: E402
 
 
-MODEL_PATH = BASE_DIR / "models" / "stgcn_best.pth"
-LABEL_INFO_PATH = BASE_DIR / "models" / "stgcn_label_info.pkl"
 POSTURE_MODEL_PATH = BASE_DIR / "models" / "posture_classifier.pkl"
 POSTURE_SCALER_PATH = BASE_DIR / "models" / "scaler.pkl"
 POSTURE_LABEL_ENCODER_PATH = BASE_DIR / "models" / "label_encoder.pkl"
 WEB_INDEX_PATH = BASE_DIR / "web" / "index.html"
 WEB_TESTER_PATH = BASE_DIR / "web" / "tester.html"
-UNKNOWN_THRESHOLD = 0.70
+
 
 app = FastAPI(title="Qubit ST-GCN API", version="1.0.0")
 
 
 class PredictRequest(BaseModel):
-    # Expected shape: [T, V, C] = [24, 33, 3]
     window: List[List[List[float]]] = Field(..., description="Skeleton sequence [T, V, C]")
 
 
@@ -47,7 +52,6 @@ class PredictResponse(BaseModel):
 
 
 class PosturePredictRequest(BaseModel):
-    # Single frame landmarks with shape [33, 4] = [x, y, z, visibility]
     frame: List[List[float]] = Field(..., description="Single-frame landmarks [33, 4]")
 
 
@@ -58,34 +62,13 @@ class PosturePredictResponse(BaseModel):
     classes: List[str]
 
 
-MODEL = None
+MODEL: STGCNClassifier | None = None
 CLASSES: List[str] = []
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 POSTURE_MODEL = None
 POSTURE_SCALER = None
 POSTURE_LABEL_ENCODER = None
 POSTURE_FEATURE_NAMES = [name for i in range(33) for name in (f"x{i}", f"y{i}", f"z{i}", f"v{i}")]
-
-
-def load_artifacts() -> tuple[STGCNClassifier, List[str]]:
-    """
-    Load model weights and class labels.
-    """
-    if not MODEL_PATH.is_file():
-        raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
-    if not LABEL_INFO_PATH.is_file():
-        raise FileNotFoundError(f"Label info not found: {LABEL_INFO_PATH}")
-
-    label_info = joblib.load(LABEL_INFO_PATH)
-    classes = list(label_info["classes"])
-    base_channels = int(label_info.get("base_channels", 32))
-
-    model = STGCNClassifier(num_classes=len(classes), base_channels=base_channels)
-    state = torch.load(MODEL_PATH, map_location=DEVICE)
-    model.load_state_dict(state)
-    model.to(DEVICE)
-    model.eval()
-    return model, classes
 
 
 def load_posture_artifacts():
@@ -103,7 +86,7 @@ def load_posture_artifacts():
 @app.on_event("startup")
 def on_startup():
     global MODEL, CLASSES, POSTURE_MODEL, POSTURE_SCALER, POSTURE_LABEL_ENCODER
-    MODEL, CLASSES = load_artifacts()
+    MODEL, CLASSES, _ = load_stgcn_model(DEVICE)
     POSTURE_MODEL, POSTURE_SCALER, POSTURE_LABEL_ENCODER = load_posture_artifacts()
 
 
@@ -128,6 +111,8 @@ def health():
         "device": str(DEVICE),
         "num_classes": len(CLASSES),
         "unknown_threshold": UNKNOWN_THRESHOLD,
+        "min_confidence_by_class": dict(MIN_CONFIDENCE_BY_CLASS),
+        "idle_label": IDLE_LABEL,
         "posture_model_ready": POSTURE_MODEL is not None and POSTURE_SCALER is not None,
     }
 
@@ -147,20 +132,10 @@ def predict(req: PredictRequest):
         )
 
     arr = normalise_skeleton_sequence(arr)
+    x_tensor = sequence_to_tensor(arr).to(DEVICE)
+    probs = predict_probs(MODEL, x_tensor)
+    out_label, top_conf, _ = label_from_prediction(probs, CLASSES)
 
-    # Convert [T, V, C] -> [1, C, T, V, 1]
-    x = np.transpose(arr, (2, 0, 1))  # [C, T, V]
-    x = x[:, :, :, None][None, ...]   # [1, C, T, V, 1]
-    x_tensor = torch.from_numpy(x).to(DEVICE)
-
-    with torch.no_grad():
-        logits = MODEL(x_tensor)
-        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-
-    pred_idx = int(np.argmax(probs))
-    top_conf = float(probs[pred_idx])
-    top_label = CLASSES[pred_idx]
-    out_label = "idle" if top_conf < UNKNOWN_THRESHOLD else top_label
     return PredictResponse(
         label=out_label,
         confidence=top_conf,
@@ -181,7 +156,7 @@ def predict_posture(req: PosturePredictRequest):
             detail=f"Expected shape [33, 4], got [{arr.shape[0]}, {arr.shape[1] if arr.ndim > 1 else 'NA'}]",
         )
 
-    flat = arr.reshape(-1)  # [132]
+    flat = arr.reshape(-1)
     features_df = pd.DataFrame([flat], columns=POSTURE_FEATURE_NAMES)
     scaled = POSTURE_SCALER.transform(features_df)
 
